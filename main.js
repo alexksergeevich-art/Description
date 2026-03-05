@@ -1,21 +1,24 @@
-
-const VER = "na-1"; // поменяй строку если GitHub Pages кэшит
+const VER = "na-2"; // поменяй строку если GitHub Pages кэшит
 
 // ====== SPRITES (без атласа) ======
 const SPRITES = {
-  down:       { url: `assets/sprite_down.png?v=${VER}`,       frameW: 688, frameH: 464, frames: 10, fps: 12 },
-  right:      { url: `assets/sprite_righ.png?v=${VER}`,       frameW: 292, frameH: 293, frames: 30, fps: 12 },
-  downRight:  { url: `assets/sprite_down_right.png?v=${VER}`, frameW: 688, frameH: 464, frames: 6,  fps: 12 },
-  upRight:    { url: `assets/sprite_up_right.png?v=${VER}`,   frameW: 688, frameH: 464, frames: 24, fps: 14 },
-  up:         { url: `assets/sprite_up.png?v=${VER}`,         frameW: 332, frameH: 302, frames: 12, fps: 12 },
+  down:      { url: `assets/sprite_down.png?v=${VER}`,       frameW: 688, frameH: 464, frames: 10, fps: 12 },
+  right:     { url: `assets/sprite_righ.png?v=${VER}`,       frameW: 292, frameH: 293, frames: 30, fps: 12 },
+  downRight: { url: `assets/sprite_down_right.png?v=${VER}`, frameW: 688, frameH: 464, frames: 6,  fps: 12 },
+  upRight:   { url: `assets/sprite_up_right.png?v=${VER}`,   frameW: 688, frameH: 464, frames: 24, fps: 14 },
+  up:        { url: `assets/sprite_up.png?v=${VER}`,         frameW: 332, frameH: 302, frames: 12, fps: 12 },
   idleFront: { url: `assets/sprite_idle_front.png?v=${VER}`, frameW: 380, frameH: 420, frames: 8,  fps: 6 },
   idleBack:  { url: `assets/sprite_idle_back.png?v=${VER}`,  frameW: 353, frameH: 342, frames: 12, fps: 6 },
-  attack:     { url: `assets/sprite_attack.png?v=${VER}`,     frameW: 459, frameH: 392, frames: 24, fps: 16 },
-  death:      { url: `assets/sprite_death.png?v=${VER}`,      frameW: 688, frameH: 464, frames: 23, fps: 12 },
+  attack:    { url: `assets/sprite_attack.png?v=${VER}`,     frameW: 459, frameH: 392, frames: 24, fps: 16 },
+  death:     { url: `assets/sprite_death.png?v=${VER}`,      frameW: 688, frameH: 464, frames: 23, fps: 12 },
 };
 
 // ====== DRAGON SPRITE (loop) ======
-const DRAGON_SPRITE = { url: `assets/sprite_dragon.png?v=${VER}`, frameW: 256, frameH: 256, frames: 24, fps: 12, drawW: 320, drawH: 320 };
+const DRAGON_SPRITE = {
+  url: `assets/sprite_dragon.png?v=${VER}`,
+  frameW: 256, frameH: 256, frames: 24, fps: 12,
+  drawW: 320, drawH: 320
+};
 
 
 // 8 направлений (y вниз):
@@ -32,15 +35,15 @@ function dir8FromVector(dx, dy){
 function spriteForDir8(dir8){
   // возвращаем {key, flipX}
   switch(dir8){
-    case 0: return { key: "right", flipX: false };
-    case 1: return { key: "downRight", flipX: false };
-    case 2: return { key: "down", flipX: false };
-    case 3: return { key: "downRight", flipX: true  };
-    case 4: return { key: "right", flipX: true  };
-    case 5: return { key: "upRight", flipX: true  };
-    case 6: return { key: "up", flipX: false };
-    case 7: return { key: "upRight", flipX: false };
-    default: return { key: "down", flipX: false };
+    case 0: return { key: "right",    flipX: false };
+    case 1: return { key: "downRight",flipX: false };
+    case 2: return { key: "down",     flipX: false };
+    case 3: return { key: "downRight",flipX: true  };
+    case 4: return { key: "right",    flipX: true  };
+    case 5: return { key: "upRight",  flipX: true  };
+    case 6: return { key: "up",       flipX: false };
+    case 7: return { key: "upRight",  flipX: false };
+    default: return { key: "down",    flipX: false };
   }
 }
 
@@ -122,14 +125,67 @@ const anim = {
   acc: 0,
 };
 
-// ====== FRAME STABILIZER (убираем дёргание idle влево/вправо) ======
-// В некоторых idle-листах персонаж "гуляет" внутри кадров на 1–2px,
-// поэтому при смене кадров кажется, что модель дёргается.
-// Эти смещения выровнены под центр кадра.
+// ====== IDLE STABILIZER (auto offsets per frame) ======
+// Автоматически считает сдвиги каждого кадра idle по "опоре ног" (низ кадра),
+// чтобы модель не кидало влево/вправо при смене кадров.
 const FRAME_X_OFFSETS = {
-  idleFront: [0.5, 0.5, 0.0, 0.5, 0.0, 0.5, 0.5, 0.0],
-  idleBack:  [0.5, 1.0, 0.0, 0.5, 1.0, 1.0, 1.5, 0.0, 0.0, 0.5, 0.5, 1.0],
+  idleFront: null, // будет массив px
+  idleBack:  null
 };
+
+function computeFrameOffsets(url, frameW, frameH, frames){
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      const c = document.createElement("canvas");
+      c.width = img.width;
+      c.height = img.height;
+      const ctx = c.getContext("2d", { willReadFrequently: true });
+      ctx.drawImage(img, 0, 0);
+
+      // берём нижние ~22% кадра (ступни/ноги)
+      const y0 = Math.floor(frameH * 0.78);
+      const h  = Math.max(1, frameH - y0);
+
+      const centers = [];
+      for (let f = 0; f < frames; f++){
+        const sx = f * frameW;
+        const data = ctx.getImageData(sx, y0, frameW, h).data;
+
+        let sumX = 0, cnt = 0;
+        for (let y = 0; y < h; y++){
+          for (let x = 0; x < frameW; x++){
+            const a = data[(y*frameW + x)*4 + 3];
+            if (a > 20){ sumX += x; cnt++; }
+          }
+        }
+        centers.push(cnt ? (sumX / cnt) : (frameW * 0.5));
+      }
+
+      // эталон = медиана (устойчива к выбросам)
+      const sorted = [...centers].sort((a,b)=>a-b);
+      const ref = sorted[Math.floor(sorted.length/2)];
+
+      // offsets — строго целые px (убирает субпиксельную дрожь на мобилах)
+      const offsets = centers.map(cx => Math.round(ref - cx));
+      resolve(offsets);
+    };
+
+    img.onerror = () => resolve(new Array(frames).fill(0));
+    img.src = url;
+  });
+}
+
+// запускаем расчёт сразу (параллельно игре)
+(async ()=>{
+  FRAME_X_OFFSETS.idleFront = await computeFrameOffsets(
+    SPRITES.idleFront.url, SPRITES.idleFront.frameW, SPRITES.idleFront.frameH, SPRITES.idleFront.frames
+  );
+  FRAME_X_OFFSETS.idleBack = await computeFrameOffsets(
+    SPRITES.idleBack.url, SPRITES.idleBack.frameW, SPRITES.idleBack.frameH, SPRITES.idleBack.frames
+  );
+})();
 
 const dragonAnim = { frame: 0, acc: 0 };
 
@@ -150,18 +206,19 @@ function applySprite(key, flipX){
   anim.flipX = flipX;
   anim.frame = 0;
   anim.acc = 0;
+
   const s = SPRITES[key];
+
   // remember facing for idle
   if (key === "up" || key === "upRight") state.player.lastFacing = "back";
   else if (key === "down" || key === "downRight" || key === "right") state.player.lastFacing = "front";
+
   playerSpriteEl.style.width = s.frameW + "px";
   playerSpriteEl.style.height = s.frameH + "px";
   playerSpriteEl.style.backgroundImage = `url("${s.url}")`;
-  // flip делаем только на inner, чтобы якорь ног не ломался
-  // transform будет обновляться в tickAnim (там же применяем выравнивание по кадру)
-  const offs0 = (FRAME_X_OFFSETS[key]?.[0] ?? 0);
-  const sign0 = flipX ? -1 : 1;
-  playerSpriteEl.style.transform = `translateX(calc(-50% + ${(offs0*sign0).toFixed(2)}px)) scaleX(${flipX ? -1 : 1})`;
+
+  // transform обновляем в tickAnim (там же применяется выравнивание по кадру)
+  playerSpriteEl.style.transform = `translateX(-50%) scaleX(${flipX ? -1 : 1})`;
 }
 
 function tickAnim(dt){
@@ -172,13 +229,18 @@ function tickAnim(dt){
     anim.acc -= spf;
     anim.frame = (anim.frame + 1) % s.frames;
   }
+
   const x = -anim.frame * s.frameW;
   playerSpriteEl.style.backgroundPosition = `${x}px 0px`;
 
   // Stabilize idle animations (remove horizontal jitter)
-  const offs = (FRAME_X_OFFSETS[anim.key]?.[anim.frame] ?? 0);
+  let offs = 0;
+  const arr = FRAME_X_OFFSETS[anim.key];
+  if (arr && arr.length) offs = arr[anim.frame] || 0;
+
   const sign = anim.flipX ? -1 : 1;
-  playerSpriteEl.style.transform = `translateX(calc(-50% + ${(offs*sign).toFixed(2)}px)) scaleX(${anim.flipX ? -1 : 1})`;
+  playerSpriteEl.style.transform =
+    `translateX(calc(-50% + ${offs * sign}px)) scaleX(${anim.flipX ? -1 : 1})`;
 }
 
 
@@ -194,7 +256,6 @@ function tickDragon(dt){
     dragonSpriteEl.style.backgroundPosition = `${x}px 0px`;
   }
 }
-
 
 function setHP(fillEl, labelEl, hp, maxHp, prefix){
   const pct = Math.max(0, Math.min(1, hp / maxHp));
@@ -330,7 +391,6 @@ function hitCenter(entityX, entityY, w, h){
   // entityX/entityY are feet coordinates; center is slightly above feet
   return { cx: entityX, cy: entityY - h * 0.5 };
 }
-
 
 function updateCombat(dt){
   if (!state.dragon.alive) return;
