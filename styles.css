@@ -1,0 +1,127 @@
+
+html,body{
+  margin:0; padding:0;
+  width:100%; height:100%;
+  overflow:hidden;
+  touch-action:manipulation;
+  background:transparent;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+}
+#stage{
+  position:relative;
+  width:100vw; height:100vh;
+}
+#bg{
+  position:absolute; inset:0;
+  background-image:url("assets/background.jpg");
+  background-size:cover;
+  background-position:center;
+  transform: scale(1.05);
+  will-change: transform, background-position;
+  animation: bgFloat 12s ease-in-out infinite alternate;
+  filter: saturate(1.05) contrast(1.02);
+}
+@keyframes bgFloat{
+  0%{ transform: scale(1.05) translate3d(0,0,0); background-position: 50% 50%; }
+  100%{ transform: scale(1.08) translate3d(-1.5%, -1%, 0); background-position: 52% 48%; }
+}
+
+.entity{
+  position:absolute;
+  transform: translate(-50%, -100%); /* anchor at feet */
+  width:344px; height:464px;
+  pointer-events:none;
+}
+.sprite{
+  position:absolute;
+  left:50%;
+  bottom:0;
+  transform: translateX(-50%);
+  background-repeat:no-repeat;
+  image-rendering: pixelated;
+  will-change: background-position, transform;
+}
+.hpbar{
+  position:absolute;
+  left:50%;
+  transform: translateX(-50%);
+  top:-18px;
+  width:120px;
+  height:10px;
+  border-radius:8px;
+  background: rgba(0,0,0,.55);
+  box-shadow: 0 2px 10px rgba(0,0,0,.35);
+  overflow:hidden;
+}
+.hpfill{
+  height:100%;
+  width:100%;
+  border-radius:8px;
+  background: linear-gradient(90deg, #26ff7a, #15c95a);
+  transition: width .08s linear;
+}
+.hplabel{
+  position:absolute;
+  left:50%;
+  transform: translateX(-50%);
+  top:-32px;
+  font-size:12px;
+  color: rgba(255,255,255,.9);
+  text-shadow: 0 1px 2px rgba(0,0,0,.7);
+  white-space:nowrap;
+}
+
+#dragon{
+  width:128px; height:128px;
+  transform: translate(-50%, -100%);
+}
+#dragon .sprite{
+  width:128px; height:128px;
+  background:transparent;
+  border-radius:0;
+  box-shadow:none;
+  image-rendering: auto;
+}
+#dragon .hpbar{ top:-16px; width:110px; }
+#dragon .hpfill{ background: linear-gradient(90deg, #ff2b2b, #b10000); }
+
+#hint{
+  position:absolute;
+  left:12px; bottom:12px;
+  padding:10px 12px;
+  background: rgba(0,0,0,.55);
+  color: rgba(255,255,255,.9);
+  border-radius:10px;
+  font-size:13px;
+  max-width: 75vw;
+  pointer-events:none;
+  backdrop-filter: blur(6px);
+}
+
+
+/* ====== HIT FX ====== */
+.damage-float{
+  position:absolute;
+  transform: translate(-50%, -50%);
+  font-weight: 800;
+  font-size: 26px;
+  color: #ff3b3b;
+  text-shadow: 0 2px 0 rgba(0,0,0,.55), 0 0 12px rgba(255,60,60,.55);
+  pointer-events:none;
+  animation: dmgFloat 600ms ease-out forwards;
+  z-index: 50;
+}
+@keyframes dmgFloat{
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(.9); }
+  10%  { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -160%) scale(1.1); }
+}
+
+#dragon.hurt .sprite{
+  animation: dragonHurt 180ms ease-out;
+}
+@keyframes dragonHurt{
+  0%   { filter: brightness(1) drop-shadow(0 0 0 rgba(0,0,0,0)); }
+  40%  { filter: brightness(1.35) drop-shadow(0 0 18px rgba(255,60,60,.75)); }
+  100% { filter: brightness(1) drop-shadow(0 0 0 rgba(0,0,0,0)); }
+}
