@@ -60,7 +60,7 @@ const dragonHPFill = document.getElementById("dragonHP");
 const dragonLabel = document.getElementById("dragonLabel");
 
 // ====== SFX ======
-const hitSfx = new Audio(`assets/hit.wav?v=${VER}`);
+const hitSfx = new Audio(`assets/hit.mp3?v=${VER}`);
 hitSfx.preload = "auto";
 hitSfx.volume = 0.65;
 
