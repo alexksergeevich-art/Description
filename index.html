@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Dragon Spawn Demo</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="appShell">
+    <aside id="controlPanel" aria-label="Панель спавна">
+      <div class="panelTitle">СПАВН</div>
+      <button class="spawnBtn level1" data-level="1">1 · LVL 1</button>
+      <button class="spawnBtn level2" data-level="2">2 · LVL 2</button>
+      <button class="spawnBtn placeholder" data-level="3">3 · скоро</button>
+      <button class="spawnBtn placeholder" data-level="4">4 · скоро</button>
+      <button class="spawnBtn placeholder" data-level="5">5 · скоро</button>
+      <div id="statusText">Нажми 1 или 2, чтобы заспавнить героя в нижнем кольце. Потом тапай по фону, чтобы вести выбранного героя.</div>
+    </aside>
+
+    <div id="stageFrame" aria-label="Игровая область 9 на 16">
+      <div id="stage">
+        <div id="bg"></div>
+        <div id="ringsLayer"></div>
+        <div id="entitiesLayer"></div>
+        <div id="fxLayer"></div>
+        <div id="dragon" class="entity dragon">
+          <div class="hplabel" id="dragonLabel">Dragon 800/800</div>
+          <div class="hpbar"><div class="hpfill dragonFill" id="dragonHP"></div></div>
+          <div class="sprite" id="dragonSprite"></div>
+        </div>
+        <div id="moveMarker"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>
