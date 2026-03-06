@@ -1,4 +1,4 @@
-const VER = "na-5"; // поменяй строку если GitHub Pages кэшит
+const VER = "na-7"; // поменяй строку если GitHub Pages кэшит
 
 // ====== SPRITES (без атласа) ======
 const SPRITES = {
@@ -8,8 +8,8 @@ const SPRITES = {
   upRight:   { url: `assets/sprite_up_right.png?v=${VER}`,   frameW: 688, frameH: 464, frames: 24, fps: 14 },
   up:        { url: `assets/sprite_up.png?v=${VER}`,         frameW: 332, frameH: 302, frames: 12, fps: 12 },
 
-  // ✅ FRONT IDLE теперь 5 кадров (удалены 0,2,7)
-  idleFront: { url: `assets/sprite_idle_front.png?v=${VER}`, frameW: 380, frameH: 420, frames: 5,  fps: 6 },
+  // ✅ новый idleFront (выровнен по ногам)
+  idleFront: { url: `assets/sprite_idle_front.png?v=${VER}`, frameW: 688, frameH: 464, frames: 7, fps: 6 },
 
   idleBack:  { url: `assets/sprite_idle_back.png?v=${VER}`,  frameW: 353, frameH: 342, frames: 12, fps: 6 },
   attack:    { url: `assets/sprite_attack.png?v=${VER}`,     frameW: 459, frameH: 392, frames: 24, fps: 16 },
@@ -64,6 +64,15 @@ const hitSfx = new Audio(`assets/hit.wav?v=${VER}`);
 hitSfx.preload = "auto";
 hitSfx.volume = 0.65;
 
+// 
+const dragonHitSfx = new Audio(`assets/dragon_hit.mp3?v=${VER}`);
+dragonHitSfx.preload = "auto";
+dragonHitSfx.volume = 0.75;
+
+const dragonRoarSfx = new Audio(`assets/dragon_roar.mp3?v=${VER}`);
+dragonRoarSfx.preload = "auto";
+dragonRoarSfx.volume = 0.85;
+
 // unlock audio on first user gesture (mobile/OBS browsers)
 let audioUnlocked = false;
 function unlockAudio(){
@@ -71,6 +80,8 @@ function unlockAudio(){
   audioUnlocked = true;
   try{
     hitSfx.play().then(()=>{ hitSfx.pause(); hitSfx.currentTime = 0; }).catch(()=>{});
+    dragonHitSfx.play().then(()=>{ dragonHitSfx.pause(); dragonHitSfx.currentTime = 0; }).catch(()=>{});
+    dragonRoarSfx.play().then(()=>{ dragonRoarSfx.pause(); dragonRoarSfx.currentTime = 0; }).catch(()=>{});
   }catch{}
 }
 document.addEventListener("pointerdown", unlockAudio, { once:true });
@@ -90,6 +101,11 @@ function flashDragonHurt(){
   dragonEl.classList.remove("hurt");
   void dragonEl.offsetWidth;
   dragonEl.classList.add("hurt");
+}
+function flashPlayerHurt(){
+  playerEl.classList.remove("hurt");
+  void playerEl.offsetWidth;
+  playerEl.classList.add("hurt");
 }
 
 // ====== WORLD STATE ======
@@ -111,6 +127,11 @@ const state = {
     spawnX: 90,
     spawnY: 0,
     respawnInvuln: 0,
+
+    // ✅ knockback
+    kbVX: 0,
+    kbVY: 0,
+    kbT: 0,
   },
   dragon: {
     x: 0,
@@ -129,12 +150,8 @@ const anim = {
   acc: 0,
 };
 
-// ====== IDLE STABILIZER (manual offsets) ======
-// ✅ Под новый 5-кадровый idleFront оффсеты:
-const FRAME_X_OFFSETS = {
-  idleFront: [0, 7, 0, 5, -6],
-  idleBack:  null, // back почти идеален — не трогаем
-};
+// (оффсеты не нужны — idleFront уже выровнен)
+const FRAME_X_OFFSETS = {};
 
 // ====== DRAGON ANIM ======
 const dragonAnim = { frame: 0, acc: 0 };
@@ -159,7 +176,6 @@ function applySprite(key, flipX){
 
   const s = SPRITES[key];
 
-  // remember facing for idle
   if (key === "up" || key === "upRight") state.player.lastFacing = "back";
   else if (key === "down" || key === "downRight" || key === "right") state.player.lastFacing = "front";
 
@@ -183,7 +199,7 @@ function tickAnim(dt){
   const x = -anim.frame * s.frameW;
   playerSpriteEl.style.backgroundPosition = `${x}px 0px`;
 
-  // stabilize idle
+  // (на будущее: если добавишь оффсеты — тут поддержка есть)
   let offs = 0;
   const arr = FRAME_X_OFFSETS[anim.key];
   if (arr && arr.length) offs = arr[anim.frame] || 0;
@@ -213,43 +229,38 @@ function setHP(fillEl, labelEl, hp, maxHp, prefix){
 }
 
 // ====== DEPTH + HITBOX ======
-const DEPTH = {
-  topScale: 1/3,
-  midScale: 0.5,
-  bottomScale: 1.0,
-};
+const DEPTH = { topScale: 1/3, midScale: 0.5, bottomScale: 1.0 };
 
 const HITBOX = {
   player: { w: 70, h: 28 },
   dragon: { wMul: 0.60, hMul: 0.35 },
 };
 
-function smoothstep(t){
-  return t * t * (3 - 2 * t);
-}
-function lerp(a,b,t){
-  return a + (b - a) * t;
-}
+function smoothstep(t){ return t * t * (3 - 2 * t); }
+function lerp(a,b,t){ return a + (b - a) * t; }
 
-// ✅ Плавная “глубина” (без резкого линейного ощущения)
 function scaleForY(y){
   const rect = stage.getBoundingClientRect();
   const h = Math.max(1, rect.height);
   const t = Math.max(0, Math.min(1, y / h)); // 0=top, 1=bottom
 
   if (t <= 0.5){
-    let k = t / 0.5;
-    k = smoothstep(k);
+    let k = smoothstep(t / 0.5);
     return lerp(DEPTH.topScale, DEPTH.midScale, k);
   } else {
-    let k = (t - 0.5) / 0.5;
-    k = smoothstep(k);
+    let k = smoothstep((t - 0.5) / 0.5);
     return lerp(DEPTH.midScale, DEPTH.bottomScale, k);
   }
 }
 
 function hitCenter(entityX, entityY, w, h){
   return { cx: entityX, cy: entityY - h * 0.5 };
+}
+
+function clampToStage(){
+  const rect = stage.getBoundingClientRect();
+  state.player.x = Math.max(0, Math.min(rect.width, state.player.x));
+  state.player.y = Math.max(0, Math.min(rect.height, state.player.y));
 }
 
 // ====== DEBUG HITBOX ======
@@ -284,13 +295,13 @@ function resize(){
   state.player.spawnX = 90;
   state.player.spawnY = rect.height - 40;
 
-  // старт: почти снизу слева
+  // старт
   state.player.y = state.player.spawnY;
   state.player.x = state.player.spawnX;
 
-  // ✅ дракон: под самым верхом, 10% вправо от середины
+  // ✅ дракон: 10% вправо от середины, и ниже на +5% (0.10 -> 0.15)
   state.dragon.x = rect.width * 0.60;
-  state.dragon.y = rect.height * 0.10;
+  state.dragon.y = rect.height * 0.15;
 
   placeEntities();
 }
@@ -353,8 +364,22 @@ const DRAGON_DMG_MIN = 100;
 const DRAGON_DMG_MAX = 300;
 let dragonAttackAcc = 0;
 
+// ✅ knockback settings
+const KNOCKBACK_PX = 38;
+const KNOCKBACK_TIME = 0.10;
+
+// ✅ roar cooldown (чтобы не спамить)
+let roarCd = 0;
+
 function randInt(min, max){
   return Math.floor(min + Math.random() * (max - min + 1));
+}
+
+function playQuick(audio){
+  try{
+    audio.currentTime = 0;
+    audio.play().catch(()=>{});
+  }catch{}
 }
 
 function respawnPlayer(){
@@ -367,7 +392,42 @@ function respawnPlayer(){
   state.player.mode = "idle";
   state.player.attackAcc = 0;
   dragonAttackAcc = 0;
-  state.player.respawnInvuln = 0.9; // короткая неуязвимость, чтобы не убило сразу снова
+  state.player.respawnInvuln = 0.9;
+
+  // reset knockback
+  state.player.kbT = 0;
+  state.player.kbVX = 0;
+  state.player.kbVY = 0;
+}
+
+function applyKnockback(dt){
+  if (state.player.kbT <= 0) return;
+  const t = Math.min(dt, state.player.kbT);
+  state.player.kbT -= t;
+
+  state.player.x += state.player.kbVX * t;
+  state.player.y += state.player.kbVY * t;
+  clampToStage();
+
+  // пока отлетает — сбрасываем точку, чтобы не “тащило обратно” мгновенно
+  state.player.targetX = null;
+  state.player.targetY = null;
+  if (state.player.mode !== "attack") state.player.mode = "idle";
+}
+
+function startKnockback(fromX, fromY, toX, toY){
+  const dx = toX - fromX;
+  const dy = toY - fromY;
+  const d = Math.hypot(dx, dy) || 1;
+
+  // направление от дракона к игроку (чтобы отлетал "от" дракона)
+  const nx = dx / d;
+  const ny = dy / d;
+
+  const spd = KNOCKBACK_PX / KNOCKBACK_TIME;
+  state.player.kbVX = nx * spd;
+  state.player.kbVY = ny * spd;
+  state.player.kbT = KNOCKBACK_TIME;
 }
 
 function updateCombat(dt){
@@ -405,7 +465,7 @@ function updateCombat(dt){
       const dmg = HIT_DPS * HIT_INTERVAL;
       state.dragon.hp -= dmg;
 
-      try{ hitSfx.currentTime = 0; hitSfx.play().catch(()=>{}); }catch{}
+      playQuick(hitSfx);
       spawnDamageFx(state.dragon.x, state.dragon.y - DRAGON_SPRITE.drawH*0.75, dmg);
       flashDragonHurt();
 
@@ -421,7 +481,7 @@ function updateCombat(dt){
       return;
     }
 
-    // ✅ дракон бьёт в ответ
+    // ✅ дракон бьёт в ответ + флэш + нокбэк + звук/рычание
     if (state.player.respawnInvuln <= 0){
       dragonAttackAcc += dt;
       while (dragonAttackAcc >= DRAGON_HIT_INTERVAL){
@@ -429,7 +489,20 @@ function updateCombat(dt){
 
         const dmgToPlayer = randInt(DRAGON_DMG_MIN, DRAGON_DMG_MAX);
         state.player.hp -= dmgToPlayer;
+
+        // FX
         spawnDamageFx(state.player.x, state.player.y - 120, dmgToPlayer);
+        flashPlayerHurt();
+
+        // knockback (от дракона к игроку)
+        startKnockback(state.dragon.x, state.dragon.y, state.player.x, state.player.y);
+
+        // sounds
+        playQuick(dragonHitSfx);
+        if (roarCd <= 0){
+          playQuick(dragonRoarSfx);
+          roarCd = 2.4; // рычание не чаще чем раз в 2.4с
+        }
 
         if (state.player.hp <= 0){
           state.player.hp = 0;
@@ -456,10 +529,9 @@ function updateMove(dt){
   const dy = state.player.targetY - state.player.y;
   const dist = Math.hypot(dx, dy);
 
-  if (dist < 2){
-    // ✅ фикс: финальная ориентация по целевой точке
+  const STOP_EPS = 3.5;
+  if (dist < STOP_EPS){
     state.player.lastFacing = (dy < 0) ? "back" : "front";
-
     state.player.x = state.player.targetX;
     state.player.y = state.player.targetY;
     state.player.targetX = null;
@@ -471,19 +543,21 @@ function updateMove(dt){
   const vx = dx / dist;
   const vy = dy / dist;
 
-  // ✅ “глубина” + реалистичнее скорость:
-  // - базово скорость пропорциональна scale
-  // - при движении вверх чуть медленнее (псевдо-3D)
+  // глубина + реалистичнее скорость
   const depthK = scaleForY(state.player.y);
-  const upSlow = 0.25;   // 25% медленнее, если идём строго вверх
-  const downFast = 0.10; // 10% быстрее, если идём строго вниз
+  const upSlow = 0.25;
+  const downFast = 0.10;
   let dirK = 1 - upSlow * Math.max(0, -vy) + downFast * Math.max(0, vy);
   dirK = Math.max(0.60, Math.min(1.20, dirK));
 
-  const spd = state.player.speed * depthK * dirK;
+  // мягкое замедление перед точкой
+  const slowK = Math.min(1, dist / 80);
 
+  const spd = state.player.speed * depthK * dirK * slowK;
   state.player.x += vx * spd * dt;
   state.player.y += vy * spd * dt;
+
+  clampToStage();
 
   state.player.dir8 = dir8FromVector(vx, vy);
   const { key, flipX } = spriteForDir8(state.player.dir8);
@@ -496,13 +570,21 @@ function loop(now){
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
 
-  // respawn invuln timer
+  // cooldown roar
+  if (roarCd > 0) roarCd = Math.max(0, roarCd - dt);
+
+  // respawn invuln
   if (state.player.respawnInvuln > 0){
     state.player.respawnInvuln = Math.max(0, state.player.respawnInvuln - dt);
   }
 
+  // ✅ knockback always applies (даже когда player.mode === "attack")
+  applyKnockback(dt);
+
+  // combat
   updateCombat(dt);
 
+  // move (если не attack)
   if (state.player.mode !== "attack"){
     updateMove(dt);
     if (state.player.mode === "idle"){
