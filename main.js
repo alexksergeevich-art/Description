@@ -688,4 +688,14 @@ function loop(now){
 
   setHP(playerHPFill, playerLabel, state.player.hp, state.player.maxHp, "HP");
   if (state.dragon.alive){
-    setHP(dragonHPFill, dragonLabel, state.dragon.hp, state.drago
+    setHP(dragonHPFill, dragonLabel, state.dragon.hp, state.dragon.maxHp, "Dragon");
+  }
+
+  requestAnimationFrame(loop);
+}
+
+// init
+applySprite("down", false);
+applyDragonSprite();
+resize();
+requestAnimationFrame(loop);
