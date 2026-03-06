@@ -1,4 +1,4 @@
-const VER = "na-4"; // поменяй строку если GitHub Pages кэшит
+const VER = "na-5"; // поменяй строку если GitHub Pages кэшит
 
 // ====== SPRITES (без атласа) ======
 const SPRITES = {
@@ -7,7 +7,10 @@ const SPRITES = {
   downRight: { url: `assets/sprite_down_right.png?v=${VER}`, frameW: 688, frameH: 464, frames: 6,  fps: 12 },
   upRight:   { url: `assets/sprite_up_right.png?v=${VER}`,   frameW: 688, frameH: 464, frames: 24, fps: 14 },
   up:        { url: `assets/sprite_up.png?v=${VER}`,         frameW: 332, frameH: 302, frames: 12, fps: 12 },
-  idleFront: { url: `assets/sprite_idle_front.png?v=${VER}`, frameW: 380, frameH: 420, frames: 8,  fps: 6 },
+
+  // ✅ FRONT IDLE теперь 5 кадров (удалены 0,2,7)
+  idleFront: { url: `assets/sprite_idle_front.png?v=${VER}`, frameW: 380, frameH: 420, frames: 5,  fps: 6 },
+
   idleBack:  { url: `assets/sprite_idle_back.png?v=${VER}`,  frameW: 353, frameH: 342, frames: 12, fps: 6 },
   attack:    { url: `assets/sprite_attack.png?v=${VER}`,     frameW: 459, frameH: 392, frames: 24, fps: 16 },
   death:     { url: `assets/sprite_death.png?v=${VER}`,      frameW: 688, frameH: 464, frames: 23, fps: 12 },
@@ -23,8 +26,8 @@ const DRAGON_SPRITE = {
 // 8 направлений (y вниз):
 // 0 right, 1 down-right, 2 down, 3 down-left, 4 left, 5 up-left, 6 up, 7 up-right
 function dir8FromVector(dx, dy){
-  const ang = Math.atan2(dy, dx); // -pi..pi
-  const step = Math.PI / 4;       // 45°
+  const ang = Math.atan2(dy, dx);
+  const step = Math.PI / 4;
   let idx = Math.floor((ang + step/2) / step);
   idx = (idx % 8 + 8) % 8;
   return idx;
@@ -102,7 +105,12 @@ const state = {
     mode: "idle", // idle | walk | attack
     dir8: 2,
     attackAcc: 0,
-    lastFacing: "front", // front | back
+    lastFacing: "front",
+
+    // respawn
+    spawnX: 90,
+    spawnY: 0,
+    respawnInvuln: 0,
   },
   dragon: {
     x: 0,
@@ -121,73 +129,12 @@ const anim = {
   acc: 0,
 };
 
-// ====== IDLE STABILIZER (опора ног: min/max) ======
+// ====== IDLE STABILIZER (manual offsets) ======
+// ✅ Под новый 5-кадровый idleFront оффсеты:
 const FRAME_X_OFFSETS = {
-  idleFront: null,
-  idleBack:  null
+  idleFront: [0, 7, 0, 5, -6],
+  idleBack:  null, // back почти идеален — не трогаем
 };
-
-function computeFrameOffsets(url, frameW, frameH, frames){
-  return new Promise((resolve) => {
-    const img = new Image();
-
-    img.onload = () => {
-      try{
-        const c = document.createElement("canvas");
-        c.width = img.width;
-        c.height = img.height;
-        const ctx = c.getContext("2d", { willReadFrequently: true });
-        ctx.drawImage(img, 0, 0);
-
-        // берём только самый низ (12% кадра), чтобы не ловить плащ/меч
-        const bandH = Math.max(2, Math.floor(frameH * 0.12));
-        const y0 = frameH - bandH;
-
-        const mids = [];
-        for (let f = 0; f < frames; f++){
-          const sx = f * frameW;
-          const data = ctx.getImageData(sx, y0, frameW, bandH).data;
-
-          let minX = Infinity;
-          let maxX = -Infinity;
-
-          for (let y = 0; y < bandH; y++){
-            for (let x = 0; x < frameW; x++){
-              const a = data[(y*frameW + x)*4 + 3];
-              if (a > 40){
-                if (x < minX) minX = x;
-                if (x > maxX) maxX = x;
-              }
-            }
-          }
-
-          const mid = (minX !== Infinity) ? (minX + maxX) * 0.5 : frameW * 0.5;
-          mids.push(mid);
-        }
-
-        const sorted = [...mids].sort((a,b)=>a-b);
-        const ref = sorted[Math.floor(sorted.length/2)];
-        const offsets = mids.map(mid => Math.round(ref - mid));
-        resolve(offsets);
-      } catch (e){
-        resolve(new Array(frames).fill(0));
-      }
-    };
-
-    img.onerror = () => resolve(new Array(frames).fill(0));
-    img.src = url;
-  });
-}
-
-// запускаем расчёт сразу (параллельно игре)
-(async ()=>{
-  FRAME_X_OFFSETS.idleFront = await computeFrameOffsets(
-    SPRITES.idleFront.url, SPRITES.idleFront.frameW, SPRITES.idleFront.frameH, SPRITES.idleFront.frames
-  );
-  FRAME_X_OFFSETS.idleBack = await computeFrameOffsets(
-    SPRITES.idleBack.url, SPRITES.idleBack.frameW, SPRITES.idleBack.frameH, SPRITES.idleBack.frames
-  );
-})();
 
 // ====== DRAGON ANIM ======
 const dragonAnim = { frame: 0, acc: 0 };
@@ -204,6 +151,7 @@ function applyDragonSprite(){
 
 function applySprite(key, flipX){
   if (anim.key === key && anim.flipX === flipX) return;
+
   anim.key = key;
   anim.flipX = flipX;
   anim.frame = 0;
@@ -225,6 +173,7 @@ function applySprite(key, flipX){
 function tickAnim(dt){
   const s = SPRITES[anim.key];
   anim.acc += dt;
+
   const spf = 1 / (s.fps || 12);
   while (anim.acc >= spf){
     anim.acc -= spf;
@@ -234,6 +183,7 @@ function tickAnim(dt){
   const x = -anim.frame * s.frameW;
   playerSpriteEl.style.backgroundPosition = `${x}px 0px`;
 
+  // stabilize idle
   let offs = 0;
   const arr = FRAME_X_OFFSETS[anim.key];
   if (arr && arr.length) offs = arr[anim.frame] || 0;
@@ -274,6 +224,35 @@ const HITBOX = {
   dragon: { wMul: 0.60, hMul: 0.35 },
 };
 
+function smoothstep(t){
+  return t * t * (3 - 2 * t);
+}
+function lerp(a,b,t){
+  return a + (b - a) * t;
+}
+
+// ✅ Плавная “глубина” (без резкого линейного ощущения)
+function scaleForY(y){
+  const rect = stage.getBoundingClientRect();
+  const h = Math.max(1, rect.height);
+  const t = Math.max(0, Math.min(1, y / h)); // 0=top, 1=bottom
+
+  if (t <= 0.5){
+    let k = t / 0.5;
+    k = smoothstep(k);
+    return lerp(DEPTH.topScale, DEPTH.midScale, k);
+  } else {
+    let k = (t - 0.5) / 0.5;
+    k = smoothstep(k);
+    return lerp(DEPTH.midScale, DEPTH.bottomScale, k);
+  }
+}
+
+function hitCenter(entityX, entityY, w, h){
+  return { cx: entityX, cy: entityY - h * 0.5 };
+}
+
+// ====== DEBUG HITBOX ======
 let debugHitbox = false;
 const hbPlayer = document.createElement("div");
 const hbDragon = document.createElement("div");
@@ -297,35 +276,21 @@ window.addEventListener("keydown", (e)=>{
   }
 });
 
-function scaleForY(y){
-  const rect = stage.getBoundingClientRect();
-  const h = Math.max(1, rect.height);
-  const t = Math.max(0, Math.min(1, y / h)); // 0=top, 1=bottom
-
-  if (t <= 0.5){
-    const k = t / 0.5;
-    return DEPTH.topScale + (DEPTH.midScale - DEPTH.topScale) * k;
-  } else {
-    const k = (t - 0.5) / 0.5;
-    return DEPTH.midScale + (DEPTH.bottomScale - DEPTH.midScale) * k;
-  }
-}
-
-function hitCenter(entityX, entityY, w, h){
-  return { cx: entityX, cy: entityY - h * 0.5 };
-}
-
 // ====== LAYOUT ======
 function resize(){
   const rect = stage.getBoundingClientRect();
 
-  // старт: почти снизу слева
-  state.player.y = rect.height - 40;
-  state.player.x = 90;
+  // spawn
+  state.player.spawnX = 90;
+  state.player.spawnY = rect.height - 40;
 
-  // ✅ ДРАКОН: под самым верхом, +10% вправо от середины
-  state.dragon.x = rect.width * 0.60; // 0.50 + 0.10
-  state.dragon.y = rect.height * 0.10; // почти верх
+  // старт: почти снизу слева
+  state.player.y = state.player.spawnY;
+  state.player.x = state.player.spawnX;
+
+  // ✅ дракон: под самым верхом, 10% вправо от середины
+  state.dragon.x = rect.width * 0.60;
+  state.dragon.y = rect.height * 0.10;
 
   placeEntities();
 }
@@ -375,13 +340,35 @@ function setTargetFromEvent(e){
   state.player.targetY = y;
   if (state.player.mode !== "attack") state.player.mode = "walk";
 }
-
 stage.addEventListener("pointerdown", (e) => setTargetFromEvent(e));
 stage.addEventListener("touchstart", (e) => setTargetFromEvent(e), { passive: true });
 
 // ====== COMBAT ======
 const ATTACK_RANGE = 110;
 const HIT_DPS = 18;
+
+// ====== DRAGON ATTACK ======
+const DRAGON_HIT_INTERVAL = 1.0; // раз в 1 сек
+const DRAGON_DMG_MIN = 100;
+const DRAGON_DMG_MAX = 300;
+let dragonAttackAcc = 0;
+
+function randInt(min, max){
+  return Math.floor(min + Math.random() * (max - min + 1));
+}
+
+function respawnPlayer(){
+  const rect = stage.getBoundingClientRect();
+  state.player.hp = state.player.maxHp;
+  state.player.x = state.player.spawnX;
+  state.player.y = state.player.spawnY || (rect.height - 40);
+  state.player.targetX = null;
+  state.player.targetY = null;
+  state.player.mode = "idle";
+  state.player.attackAcc = 0;
+  dragonAttackAcc = 0;
+  state.player.respawnInvuln = 0.9; // короткая неуязвимость, чтобы не убило сразу снова
+}
 
 function updateCombat(dt){
   if (!state.dragon.alive) return;
@@ -400,6 +387,7 @@ function updateCombat(dt){
   const dist = Math.hypot(dx, dy);
 
   if (dist <= ATTACK_RANGE){
+    // игрок атакует
     state.player.mode = "attack";
     state.player.targetX = null;
     state.player.targetY = null;
@@ -408,6 +396,7 @@ function updateCombat(dt){
     const { flipX } = spriteForDir8(state.player.dir8);
     applySprite("attack", flipX);
 
+    // урон игрока по дракону
     const HIT_INTERVAL = 0.18;
     state.player.attackAcc += dt;
     while (state.player.attackAcc >= HIT_INTERVAL){
@@ -429,10 +418,30 @@ function updateCombat(dt){
       dragonEl.style.display = "none";
       state.player.attackAcc = 0;
       state.player.mode = "idle";
+      return;
+    }
+
+    // ✅ дракон бьёт в ответ
+    if (state.player.respawnInvuln <= 0){
+      dragonAttackAcc += dt;
+      while (dragonAttackAcc >= DRAGON_HIT_INTERVAL){
+        dragonAttackAcc -= DRAGON_HIT_INTERVAL;
+
+        const dmgToPlayer = randInt(DRAGON_DMG_MIN, DRAGON_DMG_MAX);
+        state.player.hp -= dmgToPlayer;
+        spawnDamageFx(state.player.x, state.player.y - 120, dmgToPlayer);
+
+        if (state.player.hp <= 0){
+          state.player.hp = 0;
+          respawnPlayer();
+          break;
+        }
+      }
     }
   } else {
     if (state.player.mode === "attack"){
       state.player.attackAcc = 0;
+      dragonAttackAcc = 0;
       state.player.mode = (state.player.targetX != null) ? "walk" : "idle";
     }
   }
@@ -448,7 +457,7 @@ function updateMove(dt){
   const dist = Math.hypot(dx, dy);
 
   if (dist < 2){
-    // ✅ фикс: запоминаем финальную ориентацию по целевой точке
+    // ✅ фикс: финальная ориентация по целевой точке
     state.player.lastFacing = (dy < 0) ? "back" : "front";
 
     state.player.x = state.player.targetX;
@@ -462,8 +471,16 @@ function updateMove(dt){
   const vx = dx / dist;
   const vy = dy / dist;
 
+  // ✅ “глубина” + реалистичнее скорость:
+  // - базово скорость пропорциональна scale
+  // - при движении вверх чуть медленнее (псевдо-3D)
   const depthK = scaleForY(state.player.y);
-  const spd = state.player.speed * depthK;
+  const upSlow = 0.25;   // 25% медленнее, если идём строго вверх
+  const downFast = 0.10; // 10% быстрее, если идём строго вниз
+  let dirK = 1 - upSlow * Math.max(0, -vy) + downFast * Math.max(0, vy);
+  dirK = Math.max(0.60, Math.min(1.20, dirK));
+
+  const spd = state.player.speed * depthK * dirK;
 
   state.player.x += vx * spd * dt;
   state.player.y += vy * spd * dt;
@@ -478,6 +495,11 @@ let last = performance.now();
 function loop(now){
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
+
+  // respawn invuln timer
+  if (state.player.respawnInvuln > 0){
+    state.player.respawnInvuln = Math.max(0, state.player.respawnInvuln - dt);
+  }
 
   updateCombat(dt);
 
